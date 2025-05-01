@@ -20,6 +20,21 @@ from flask_wtf.csrf import generate_csrf
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
 
+CONFIG_FILE = "vote_config.json"
+def load_vote_config():
+    default_prompt = "Please select a candidate"
+    default_cands  = ["Alice", "Bob", "Charlie"]
+    if not os.path.exists(CONFIG_FILE):
+        return default_prompt, default_cands
+    try:
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+        return cfg.get("prompt", default_prompt), cfg.get("candidates", default_cands)
+    except (json.JSONDecodeError, IOError):
+        return default_prompt, default_cands
+
+PROMPT, CANDIDATE_LIST = load_vote_config()
+CANDIDATES = set(CANDIDATE_LIST)
 
 KEY_DIR = Path("keys")
 PUB_FILE, PRIV_FILE = KEY_DIR/"election_pub.pem", KEY_DIR/"election_priv.pem"
@@ -44,6 +59,7 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET", os.urandom(24))
 csrf = CSRFProtect(app)
 login_manager = LoginManager(app); login_manager.login_view = "login"
+app.config["SESSION_COOKIE_SECURE"] = True
 
 DB_PATH = "voting_demo2.db"
 RECEIPT_FILE = "receipts.log"
@@ -123,9 +139,14 @@ class LoginForm(FlaskForm):
     submit = SubmitField("Login")
 
 class VoteForm(FlaskForm):
-    choice = RadioField("Please select a candidate", choices=[("Alice","Alice"),("Bob","Bob"),("Charlie","Charlie")],
-                        validators=[DataRequired()])
+    choice = RadioField(validators=[DataRequired()])   # 不预设 choices
     submit = SubmitField("Submit Vote")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.choice.choices = [(c, c) for c in CANDIDATE_LIST]
+        self.choice.label.text = PROMPT
+
 
 # ─────────────── Views ───────────────
 @app.route("/")
@@ -188,14 +209,21 @@ def logout():
 @app.route("/vote", methods=["GET","POST"])
 @login_required
 def vote():
+    if current_user.is_admin:
+        flash("Admin can't vote!", "warning")
+        return redirect(url_for("index"))
     if current_user.has_voted:
         bal = query_one("SELECT receipt_hash FROM ballots WHERE user_id=?", (current_user.id,))
         return render_template_string(
             "<h3>You have already voted.</h3><p>Receipt: <code>{{ r }}</code></p>", r=bal["receipt_hash"])
     form = VoteForm()
     if form.validate_on_submit():
+        choice = form.choice.data
+        if choice not in CANDIDATES:
+            flash("Illegal candidate!", "danger")
+            return redirect(url_for("vote"))
         ciphertext = CIPHER_PUB.encrypt(form.choice.data.encode())
-        receipt = hashlib.sha256(ciphertext).hexdigest()
+        receipt = hashlib.sha256(ciphertext).hexdigest() #此处需要验证投票是否合法
 
         execute_sql("INSERT INTO ballots(user_id,encrypted_vote,receipt_hash,timestamp) VALUES(?,?,?,?)",
                     (current_user.id, ciphertext, receipt, datetime.utcnow().isoformat()))
@@ -213,7 +241,12 @@ def vote():
         flash("Vote successful! Please keep your receipt safe.", "success")
         return redirect(url_for("vote"))
     return render_template_string(
-        "<h3>Vote</h3><form method='POST'>{{ form.hidden_tag() }}{% for s in form.choice %}{{s()}}{{s.label.text}}<br>{% endfor %}{{ form.submit() }}</form>", form=form)
+        f"<h3>{PROMPT}</h3>"                                     # ← 用配置文件中的 prompt
+        "<form method='POST'>{{ form.hidden_tag() }}"
+        "{% for s in form.choice %}{{ s() }} {{ s.label.text }}<br>{% endfor %}"
+        "{{ form.submit() }}</form>",
+        form=form
+    )
 
 @app.route("/receipts")
 @login_required
@@ -272,4 +305,8 @@ if __name__ == "__main__":
             ("admin", generate_password_hash(pwd))
         )
         print("[*] Admin account created: admin /", pwd)
-    app.run(host="0.0.0.0", port=80, debug=True)
+
+    app.run(host="0.0.0.0", port=443,
+            debug=True,
+            ssl_context=("cert.pem", "key.pem"))
+
