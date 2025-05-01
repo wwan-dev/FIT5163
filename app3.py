@@ -1,11 +1,3 @@
-"""
-安全在线投票系统示例
-------------------------------------------------------------
-✨ 新增功能
-d. 投票者收据验证 (/verify)         ★ 1 额外分
-e. 区块链式不可篡改审计 (/chain)     ★ 2 额外分
-"""
-
 from __future__ import annotations
 import os, json, hashlib, sqlite3
 from pathlib import Path
@@ -24,12 +16,10 @@ from wtforms import StringField, PasswordField, SubmitField, RadioField
 from wtforms.validators import DataRequired, Length, EqualTo
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_wtf.csrf import generate_csrf
-# ───────────────── 加密初始化 ──────────────────
-try:
-    from Cryptodome.PublicKey import RSA
-    from Cryptodome.Cipher import PKCS1_OAEP
-except ImportError as exc:
-    raise ImportError("pip install pycryptodome") from exc
+
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP
+
 
 KEY_DIR = Path("keys")
 PUB_FILE, PRIV_FILE = KEY_DIR/"election_pub.pem", KEY_DIR/"election_priv.pem"
@@ -191,7 +181,6 @@ def login():
 @login_required
 def logout(): logout_user(); flash("已退出","info"); return redirect(url_for("index"))
 
-# ---- 投票 ----
 @app.route("/vote", methods=["GET","POST"])
 @login_required
 def vote():
@@ -227,7 +216,7 @@ def vote():
         "{% for s in form.choice %}{{s()}}{{s.label.text}}<br>{% endfor %}"
         "{{ form.submit() }}</form>", form=form)
 
-# ---- 收据列表 / 个人验证 ----
+
 @app.route("/receipts")
 @login_required
 def receipts_page():
@@ -236,8 +225,8 @@ def receipts_page():
         with open(RECEIPT_FILE) as f: receipts=[l.strip() for l in f.readlines()]
     return render_template_string("<h3>收据列表</h3><pre>{{r|join('\\n')}}</pre>", r=receipts)
 
-# ---- verify 路由（替换原函数） ----
-@csrf.exempt                     # ← 选“方案 B”就保留这行，想用方案 A 注释掉
+
+@csrf.exempt
 @app.route("/verify", methods=["GET","POST"])
 def verify_receipt():
     msg = ""
@@ -246,24 +235,13 @@ def verify_receipt():
         if rc and os.path.exists(RECEIPT_FILE):
             with open(RECEIPT_FILE) as f:
                 valid = set(line.strip() for line in f)
-            msg = "您的选票已被计入 ✅" if rc in valid else "未找到该收据 ❌"
+            msg = "您的选票已被计入" if rc in valid else "未找到该收据"
     return render_template_string(
-        """
-        <h3>选票验证</h3>
-        <form method="POST">
-            {# 方案 A 时保留下面这一行；方案 B 时可删 #}
-            <input type="hidden" name="csrf_token" value="{{ csrf }}">
-            收据:<input name="receipt">
-            <input type="submit" value="验证">
-        </form>
-        <p>{{ msg }}</p>
-        """,
         msg=msg,
-        csrf=generate_csrf(),     # 方案 A 需要；方案 B 也可留着
+        csrf=generate_csrf(),
     )
 
 
-# ---- 区块链 & 计票 ----
 @app.route("/chain")
 @login_required
 def view_chain():
@@ -283,7 +261,6 @@ def tally():
             except ValueError: pass
     return render_template_string("<h3>计票结果</h3>"+"".join(f"<p>{k}: {v}</p>" for k,v in counts.items()))
 
-# ---- 首次创建管理员 ----
 if __name__ == "__main__":
     init_db()
     print("1")
@@ -291,15 +268,14 @@ if __name__ == "__main__":
         user_exists = query_one("SELECT 1 FROM users LIMIT 1")
         print("2")
     except sqlite3.OperationalError:
-        # 极端情况：数据库文件损坏 / 手动删表，重建后视为“没有用户”
         init_db()
         user_exists = None
     print(user_exists)
-    if user_exists is None:       # 创建管理员
+    if user_exists is None:
         pwd = "admin1234"
         execute_sql(
             "INSERT INTO users(username,password_hash,is_admin) VALUES(?,?,1)",
             ("admin", generate_password_hash(pwd))
         )
         print("[*] 已创建管理员：admin /", pwd)
-    app.run(host="0.0.0.0", debug=True)
+    app.run(host="0.0.0.0", port=80, debug=True)
