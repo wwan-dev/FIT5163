@@ -23,7 +23,7 @@ from flask_wtf import FlaskForm, CSRFProtect
 from wtforms import StringField, PasswordField, SubmitField, RadioField
 from wtforms.validators import DataRequired, Length, EqualTo
 from werkzeug.security import generate_password_hash, check_password_hash
-
+from flask_wtf.csrf import generate_csrf
 # ───────────────── 加密初始化 ──────────────────
 try:
     from Cryptodome.PublicKey import RSA
@@ -55,7 +55,7 @@ app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET", os.urandom(24))
 csrf = CSRFProtect(app)
 login_manager = LoginManager(app); login_manager.login_view = "login"
 
-DB_PATH = "voting_demo.db"
+DB_PATH = "voting_demo2.db"
 RECEIPT_FILE = "receipts.log"
 CHAIN_FILE = "blockchain.json"
 
@@ -236,17 +236,32 @@ def receipts_page():
         with open(RECEIPT_FILE) as f: receipts=[l.strip() for l in f.readlines()]
     return render_template_string("<h3>收据列表</h3><pre>{{r|join('\\n')}}</pre>", r=receipts)
 
+# ---- verify 路由（替换原函数） ----
+@csrf.exempt                     # ← 选“方案 B”就保留这行，想用方案 A 注释掉
 @app.route("/verify", methods=["GET","POST"])
 def verify_receipt():
-    msg=""
-    if request.method=="POST":
-        rc=request.form.get("receipt","").strip()
+    msg = ""
+    if request.method == "POST":
+        rc = request.form.get("receipt", "").strip()
         if rc and os.path.exists(RECEIPT_FILE):
-            valid=set(open(RECEIPT_FILE).read().split())
-            msg="您的选票已被计入 ✅" if rc in valid else "未找到该收据 ❌"
-    return render_template_string("""
-        <h3>选票验证</h3><form method='POST'>收据:<input name='receipt'>
-        <input type='submit' value='验证'></form><p>{{msg}}</p>""", msg=msg)
+            with open(RECEIPT_FILE) as f:
+                valid = set(line.strip() for line in f)
+            msg = "您的选票已被计入 ✅" if rc in valid else "未找到该收据 ❌"
+    return render_template_string(
+        """
+        <h3>选票验证</h3>
+        <form method="POST">
+            {# 方案 A 时保留下面这一行；方案 B 时可删 #}
+            <input type="hidden" name="csrf_token" value="{{ csrf }}">
+            收据:<input name="receipt">
+            <input type="submit" value="验证">
+        </form>
+        <p>{{ msg }}</p>
+        """,
+        msg=msg,
+        csrf=generate_csrf(),     # 方案 A 需要；方案 B 也可留着
+    )
+
 
 # ---- 区块链 & 计票 ----
 @app.route("/chain")
@@ -270,9 +285,21 @@ def tally():
 
 # ---- 首次创建管理员 ----
 if __name__ == "__main__":
-    if not query_one("SELECT 1 FROM users WHERE is_admin=1"):
-        pwd=os.environ.get("ADMIN_PASSWORD","admin1234")
-        execute_sql("INSERT INTO users(username,password_hash,is_admin) VALUES(?,?,1)",
-                    ("admin", generate_password_hash(pwd)))
-        print("[*] 管理员账号：admin  密码:", pwd)
-    app.run(host="0.0.0.0",port=5080,debug=True)
+    init_db()
+    print("1")
+    try:
+        user_exists = query_one("SELECT 1 FROM users LIMIT 1")
+        print("2")
+    except sqlite3.OperationalError:
+        # 极端情况：数据库文件损坏 / 手动删表，重建后视为“没有用户”
+        init_db()
+        user_exists = None
+    print(user_exists)
+    if user_exists is None:       # 创建管理员
+        pwd = "admin1234"
+        execute_sql(
+            "INSERT INTO users(username,password_hash,is_admin) VALUES(?,?,1)",
+            ("admin", generate_password_hash(pwd))
+        )
+        print("[*] 已创建管理员：admin /", pwd)
+    app.run(host="0.0.0.0", debug=True)
