@@ -1,0 +1,6 @@
+{% extends 'base.html' %}
+{% block title %}Receipts – Voting System{% endblock %}
+{% block content %}
+  <h3>Receipt List</h3>
+  <pre class="bg-light p-3">{{ receipts|join('\n') }}</pre>
+{% endblock %}

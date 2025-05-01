@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+
+{% block title %}Vote – Voting System{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-8 col-lg-6">
+    <h3 class="mb-4 text-center">{{ prompt }}</h3>
+
+    {% if receipt %}
+      <div class="alert alert-success text-center">
+        You have already voted!<br>
+        <strong>Receipt:</strong> <code>{{ receipt }}</code>
+      </div>
+    {% else %}
+      <form method="POST">
+        {{ form.hidden_tag() }}
+        <div class="mb-3">
+          {% for sub in form.choice %}
+            <div class="form-check">
+              {{ sub(class="form-check-input") }}
+              {{ sub.label(class="form-check-label") }}
+            </div>
+          {% endfor %}
+        </div>
+        <button type="submit" class="btn btn-success w-100">{{ form.submit.label.text }}</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

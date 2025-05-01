@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+
+{% block title %}Home – Voting System{% endblock %}
+
+{% block content %}
+<div class="text-center">
+  <h2 class="mb-4">Welcome{% if current_user.is_authenticated %}, {{ current_user.username }}{% endif %}</h2>
+  {% if current_user.is_authenticated %}
+    <a href="{{ url_for('vote') }}" class="btn btn-lg btn-primary me-2">Go Vote</a>
+    <a href="{{ url_for('verify_receipt') }}" class="btn btn-lg btn-secondary">Verify Receipt</a>
+  {% else %}
+    <p>Please <a href="{{ url_for('login') }}">login</a> or <a href="{{ url_for('register') }}">register</a> to participate.</p>
+  {% endif %}
+</div>
+{% endblock %}

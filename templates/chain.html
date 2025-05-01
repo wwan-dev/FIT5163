@@ -1,0 +1,6 @@
+{% extends 'base.html' %}
+{% block title %}Blockchain – Voting System{% endblock %}
+{% block content %}
+  <h3>Blockchain Data</h3>
+  <pre class="bg-dark text-light p-3">{{ chain|tojson(indent=2) }}</pre>
+{% endblock %}

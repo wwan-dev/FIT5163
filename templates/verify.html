@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+{% block title %}Verify Receipt – Voting System{% endblock %}
+{% block content %}
+  <h3>Verify Receipt</h3>
+  <form method="POST" class="input-group mb-3">
+    <input name="receipt" class="form-control" placeholder="Enter receipt">
+    <button class="btn btn-outline-primary" type="submit">Verify</button>
+  </form>
+  {% if msg %}
+    <div class="alert alert-info">{{ msg }}</div>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+{% block title %}Tally – Voting System{% endblock %}
+{% block content %}
+  <h3>Vote Tally</h3>
+  <ul class="list-group">
+    {% for candidate, count in counts.items() %}
+      <li class="list-group-item d-flex justify-content-between align-items-center">
+        {{ candidate }}
+        <span class="badge bg-primary rounded-pill">{{ count }}</span>
+      </li>
+    {% endfor %}
+  </ul>
+{% endblock %}

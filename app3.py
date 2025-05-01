@@ -4,7 +4,7 @@ from pathlib import Path
 from datetime import datetime
 
 from flask import (
-    Flask, render_template_string, redirect, url_for,
+    Flask, render_template, redirect, url_for,
     flash, abort, request
 )
 from flask_login import (
@@ -119,7 +119,7 @@ class User(UserMixin):
         self.id, self.username = id, username
         self.password_hash, self.has_voted, self.is_admin = pw, bool(voted), bool(admin)
     @staticmethod
-    def get(uid): 
+    def get(uid):
         row = query_one("SELECT * FROM users WHERE id=?", (uid,))
         return User(*row) if row else None
 
@@ -139,7 +139,7 @@ class LoginForm(FlaskForm):
     submit = SubmitField("Login")
 
 class VoteForm(FlaskForm):
-    choice = RadioField(validators=[DataRequired()])   # 不预设 choices
+    choice = RadioField(validators=[DataRequired()])
     submit = SubmitField("Submit Vote")
 
     def __init__(self, *args, **kwargs):
@@ -147,64 +147,56 @@ class VoteForm(FlaskForm):
         self.choice.choices = [(c, c) for c in CANDIDATE_LIST]
         self.choice.label.text = PROMPT
 
+# ─────────────── Context Processors ───────────────
+@app.context_processor
+def inject_current_year():
+    return {'current_year': datetime.utcnow().year}
 
 # ─────────────── Views ───────────────
 @app.route("/")
 def index():
-    html="""<h2>Secure Voting System Demo</h2>
-    {% if current_user.is_authenticated %}
-      <p>Hello, {{ current_user.username }}.</p>
-      <p><a href='{{ url_for("vote") }}'>Vote / View Ballot</a> |
-         <a href='{{ url_for("verify_receipt") }}'>Verify Receipt</a> |
-         <a href='{{ url_for("logout") }}'>Logout</a></p>
-      {% if current_user.is_admin %}
-        <p><a href='{{ url_for("tally") }}'>View Tally</a> |
-           <a href='{{ url_for("receipts_page") }}'>Receipt List</a> |
-           <a href='{{ url_for("view_chain") }}'>Blockchain</a></p>
-      {% endif %}
-    {% else %}
-      <p><a href='{{ url_for("login") }}'>Login</a> or <a href='{{ url_for("register") }}'>Register</a></p>
-    {% endif %}"""
-    return render_template_string(html)
+    # 这一行会在终端/控制台输出，确认我们渲染的是 templates/index.html
+    print("渲染 index.html！")
+    return render_template("index.html")
+
 
 @app.route("/register", methods=["GET","POST"])
 def register():
-    if current_user.is_authenticated: return redirect(url_for("index"))
+    if current_user.is_authenticated:
+        return redirect(url_for("index"))
     form = RegistrationForm()
     if form.validate_on_submit():
         if query_one("SELECT 1 FROM users WHERE username=?", (form.username.data,)):
             flash("Username already exists", "danger")
         else:
-            execute_sql("INSERT INTO users(username,password_hash) VALUES(?,?)",
-                        (form.username.data, generate_password_hash(form.password.data)))
+            execute_sql(
+                "INSERT INTO users(username,password_hash) VALUES(?,?)",
+                (form.username.data, generate_password_hash(form.password.data))
+            )
             flash("Registration successful, please login", "success")
             return redirect(url_for("login"))
-    return render_template_string("""<h3>Register</h3>
-        <form method='POST'>{{ form.hidden_tag() }}
-        {{ form.username.label }} {{ form.username() }}<br>
-        {{ form.password.label }} {{ form.password() }}<br>
-        {{ form.confirm.label }}  {{ form.confirm() }}<br>
-        {{ form.submit() }}</form>""", form=form)
+    return render_template("register.html", form=form)
 
 @app.route("/login", methods=["GET","POST"])
 def login():
-    if current_user.is_authenticated: return redirect(url_for("index"))
+    if current_user.is_authenticated:
+        return redirect(url_for("index"))
     form = LoginForm()
     if form.validate_on_submit():
         row = query_one("SELECT * FROM users WHERE username=?", (form.username.data,))
         if row and check_password_hash(row["password_hash"], form.password.data):
-            login_user(User(*row)); flash("Login successful", "success"); return redirect(url_for("index"))
+            login_user(User(*row))
+            flash("Login successful", "success")
+            return redirect(url_for("index"))
         flash("Invalid username or password", "danger")
-    return render_template_string("""<h3>Login</h3>
-        <form method='POST'>{{ form.hidden_tag() }}
-        {{ form.username.label }} {{ form.username() }}<br>
-        {{ form.password.label }} {{ form.password() }}<br>
-        {{ form.submit() }}</form>""", form=form)
+    return render_template("login.html", form=form)
 
 @app.route("/logout")
 @login_required
-def logout(): 
-    logout_user(); flash("Logged out", "info"); return redirect(url_for("index"))
+def logout():
+    logout_user()
+    flash("Logged out", "info")
+    return redirect(url_for("index"))
 
 @app.route("/vote", methods=["GET","POST"])
 @login_required
@@ -212,25 +204,37 @@ def vote():
     if current_user.is_admin:
         flash("Admin can't vote!", "warning")
         return redirect(url_for("index"))
+    # 已投票，直接展示收据
     if current_user.has_voted:
-        bal = query_one("SELECT receipt_hash FROM ballots WHERE user_id=?", (current_user.id,))
-        return render_template_string(
-            "<h3>You have already voted.</h3><p>Receipt: <code>{{ r }}</code></p>", r=bal["receipt_hash"])
+        bal = query_one(
+            "SELECT receipt_hash FROM ballots WHERE user_id=?", (current_user.id,)
+        )
+        return render_template(
+            "vote.html",
+            form=None,
+            prompt=PROMPT,
+            receipt=bal["receipt_hash"]
+        )
+
     form = VoteForm()
     if form.validate_on_submit():
         choice = form.choice.data
         if choice not in CANDIDATES:
             flash("Illegal candidate!", "danger")
             return redirect(url_for("vote"))
-        ciphertext = CIPHER_PUB.encrypt(form.choice.data.encode())
-        receipt = hashlib.sha256(ciphertext).hexdigest() #此处需要验证投票是否合法
 
-        execute_sql("INSERT INTO ballots(user_id,encrypted_vote,receipt_hash,timestamp) VALUES(?,?,?,?)",
-                    (current_user.id, ciphertext, receipt, datetime.utcnow().isoformat()))
+        ciphertext = CIPHER_PUB.encrypt(choice.encode())
+        receipt = hashlib.sha256(ciphertext).hexdigest()
+
+        execute_sql(
+            "INSERT INTO ballots(user_id,encrypted_vote,receipt_hash,timestamp) VALUES(?,?,?,?)",
+            (current_user.id, ciphertext, receipt, datetime.utcnow().isoformat())
+        )
         execute_sql("UPDATE users SET has_voted=1 WHERE id=?", (current_user.id,))
         current_user.has_voted = True
 
-        with open(RECEIPT_FILE,"a",encoding="utf-8") as f: f.write(receipt+"\n")
+        with open(RECEIPT_FILE, "a", encoding="utf-8") as f:
+            f.write(receipt + "\n")
 
         add_block({
             "user_id": current_user.id,
@@ -240,21 +244,22 @@ def vote():
 
         flash("Vote successful! Please keep your receipt safe.", "success")
         return redirect(url_for("vote"))
-    return render_template_string(
-        f"<h3>{PROMPT}</h3>"                                     # ← 用配置文件中的 prompt
-        "<form method='POST'>{{ form.hidden_tag() }}"
-        "{% for s in form.choice %}{{ s() }} {{ s.label.text }}<br>{% endfor %}"
-        "{{ form.submit() }}</form>",
-        form=form
+
+    return render_template(
+        "vote.html",
+        form=form,
+        prompt=PROMPT,
+        receipt=None
     )
 
 @app.route("/receipts")
 @login_required
 def receipts_page():
-    receipts=[]
+    receipts = []
     if os.path.exists(RECEIPT_FILE):
-        with open(RECEIPT_FILE) as f: receipts=[l.strip() for l in f.readlines()]
-    return render_template_string("<h3>Receipt List</h3><pre>{{r|join('\\n')}}</pre>", r=receipts)
+        with open(RECEIPT_FILE) as f:
+            receipts = [l.strip() for l in f]
+    return render_template("receipts.html", receipts=receipts)
 
 @csrf.exempt
 @app.route("/verify", methods=["GET","POST"])
@@ -266,30 +271,31 @@ def verify_receipt():
             with open(RECEIPT_FILE) as f:
                 valid = set(line.strip() for line in f)
             msg = "Your vote has been counted" if rc in valid else "Receipt not found"
-    return render_template_string(
-        "<h3>Verify Receipt</h3><form method='POST'><input name='receipt'><input type='submit'></form><p>{{msg}}</p>",
-        msg=msg,
-        csrf=generate_csrf(),
-    )
+    return render_template("verify.html", msg=msg)
 
 @app.route("/chain")
 @login_required
 def view_chain():
-    if not current_user.is_admin: abort(403)
-    return f"<pre>{json.dumps(load_chain(),indent=2,ensure_ascii=False)}</pre>"
+    if not current_user.is_admin:
+        abort(403)
+    chain_data = load_chain()
+    return render_template("chain.html", chain=chain_data)
 
 @app.route("/tally")
 @login_required
 def tally():
-    if not current_user.is_admin: abort(403)
-    counts={"Alice":0,"Bob":0,"Charlie":0}
+    if not current_user.is_admin:
+        abort(403)
+    counts = {c: 0 for c in CANDIDATE_LIST}
     with sqlite3.connect(DB_PATH) as c:
         for (enc,) in c.execute("SELECT encrypted_vote FROM ballots"):
             try:
                 choice = CIPHER_PRIV.decrypt(enc).decode()
-                if choice in counts: counts[choice] += 1
-            except ValueError: pass
-    return render_template_string("<h3>Tally Results</h3>" + "".join(f"<p>{k}: {v}</p>" for k,v in counts.items()))
+                if choice in counts:
+                    counts[choice] += 1
+            except ValueError:
+                pass
+    return render_template("tally.html", counts=counts)
 
 if __name__ == "__main__":
     init_db()
@@ -309,4 +315,3 @@ if __name__ == "__main__":
     app.run(host="0.0.0.0", port=443,
             debug=True,
             ssl_context=("cert.pem", "key.pem"))
-
