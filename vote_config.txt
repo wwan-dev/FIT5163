@@ -1,0 +1,2 @@
+max_votes=1
+session_id=default1

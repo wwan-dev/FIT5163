@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>管理员设置</title>
+</head>
+<body>
+    <h1>设置投票选项与状态</h1>
+    <form action="/admin/options" method="post">
+        <label>请设置投票标题：</label><br>
+        <input type="text" name="title" value="{{ title }}" size="50" required><br><br>
+
+        <label>投票选项（每行一个）：</label><br>
+        <textarea name="options" rows="10" cols="40">{{ options_text }}</textarea><br><br>
+
+        <label>最大投票数：</label>
+        <input type="number" name="max_votes" value="{{ max_votes }}" min="1" required><br><br>
+
+        <label>本轮投票标识符（如日期）：</label>
+        <input type="text" name="session_id" value="{{ session_id }}" required><br><br>
+
+        <label>投票状态：</label>
+        <select name="vote_status">
+            <option value="open" {% if vote_status == 'open' %}selected{% endif %}>开放</option>
+            <option value="closed" {% if vote_status == 'closed' %}selected{% endif %}>关闭</option>
+        </select><br><br>
+
+        <label>结果展示：</label>
+        <select name="result_status">
+            <option value="show" {% if result_status == 'show' %}selected{% endif %}>展示</option>
+            <option value="hide" {% if result_status == 'hide' %}selected{% endif %}>隐藏</option>
+        </select><br><br>
+
+        <button type="submit">保存设置</button>
+    </form>
+    <br>
+    <a href="/admin/logout">登出</a>
+</body>
+</html>
