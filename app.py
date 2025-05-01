@@ -1,13 +1,12 @@
 from flask import Flask, render_template, request, redirect, session
 from flask_wtf.csrf import CSRFProtect
-csrf = CSRFProtect(app)
 
 import csv
 import os
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key'
-
+csrf = CSRFProtect(app)
 OPTIONS_FILE = 'options.txt'
 VOTE_FILE = 'votes.csv'
 STATUS_FILE = 'status.txt'
