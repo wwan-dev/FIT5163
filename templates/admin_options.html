@@ -6,6 +6,7 @@
 <body>
     <h1>设置投票选项与状态</h1>
     <form action="/admin/options" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label>请设置投票标题：</label><br>
         <input type="text" name="title" value="{{ title }}" size="50" required><br><br>
 

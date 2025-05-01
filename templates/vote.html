@@ -8,6 +8,7 @@
     {% if votes_left > 0 %}
         <p>你还可以投 {{ votes_left }} 票</p>
         <form action="/vote" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             {% for option in options %}
                 <input type="radio" name="option" value="{{ option }}" required> {{ option }}<br>
             {% endfor %}

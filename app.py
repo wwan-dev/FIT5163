@@ -1,17 +1,19 @@
 from flask import Flask, render_template, request, redirect, session
-from flask_wtf.csrf import CSRFProtect
-
+from flask_wtf.csrf import CSRFProtect,generate_csrf
 import csv
 import os
 
 app = Flask(__name__)
-app.secret_key = 'your-secret-key'
+app.secret_key = 'my-secret-key'
 csrf = CSRFProtect(app)
 OPTIONS_FILE = 'options.txt'
 VOTE_FILE = 'votes.csv'
 STATUS_FILE = 'status.txt'
 TITLE_FILE = 'title.txt'
 CONFIG_FILE = 'vote_config.txt'
+@app.context_processor
+def inject_csrf_token():
+    return dict(csrf_token=generate_csrf)
 
 def get_vote_status():
     if not os.path.exists(STATUS_FILE):
@@ -163,4 +165,6 @@ def admin_options():
                            session_id=config['session_id'])
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=80)
+
+
