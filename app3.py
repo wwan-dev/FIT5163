@@ -112,8 +112,6 @@ def execute_sql(sql, p=()):
     with sqlite3.connect(DB_PATH) as c:
         c.execute(sql, p); c.commit()
 
-init_db()
-
 class User(UserMixin):
     def __init__(self, id, username, pw, voted, admin):
         self.id, self.username = id, username
